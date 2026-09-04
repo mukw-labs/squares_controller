@@ -48,6 +48,16 @@ class TwinklyProtocolTests(unittest.TestCase):
 
         self.assertEqual(choose_stream_fps(device), 23.26)
 
+    def test_ignores_one_fps_measurement_sentinel_from_squares(self) -> None:
+        device = {
+            "product_code": "TWQ064STW",
+            "frame_rate": 40,
+            "measured_frame_rate": 1,
+        }
+
+        self.assertEqual(choose_stream_fps(device), 37.5)
+        self.assertAlmostEqual(stream_interval_seconds(device), 1 / 37.5)
+
     def test_calculates_32_by_24_geometry_and_flips_device_y(self) -> None:
         layout = calculate_layout(rectangular_coordinates(32, 24))
         self.assertEqual(layout.width, 32)

@@ -61,6 +61,17 @@ def choose_stream_fps(device: dict[str, Any] | None) -> float:
         return MAX_STABLE_STREAM_FPS
     if device_rate <= 0:
         return MAX_STABLE_STREAM_FPS
+    # Squares firmware 2.9.1 can expose measured_frame_rate=1 as a sentinel
+    # even while advertising its actual 40 FPS capability. Treat that exact
+    # mismatch as missing measurement data instead of throttling realtime
+    # output to one frame per second.
+    if device_rate == 1:
+        try:
+            advertised_rate = float(device.get("frame_rate", 0))
+        except (TypeError, ValueError):
+            advertised_rate = 0
+        if advertised_rate > 1:
+            device_rate = advertised_rate
     return min(device_rate, MAX_STABLE_STREAM_FPS)
 
 
