@@ -96,6 +96,116 @@ Scenes, playlists, palettes, automations, and runtime policy are stored in
 `.squares/` beside the controller. That directory and `config.json` are
 ignored by Git.
 
+## Docker and Unraid
+
+The container builds the TypeScript frontend once, then runs the standard-library
+Python server without Node.js or development dependencies. Images are published
+for `linux/amd64` and `linux/arm64` at:
+
+```text
+ghcr.io/mukw-labs/squares_controller
+```
+
+For a normal Unraid installation, bridge networking is sufficient because
+Squares Controller uses only unicast traffic to a manually configured device
+address:
+
+```bash
+docker run -d \
+  --name twinkly-squares \
+  --restart unless-stopped \
+  -p 4312:4312 \
+  -e TWINKLY_IP=192.168.1.100 \
+  -v /mnt/user/appdata/twinkly-squares:/data \
+  ghcr.io/mukw-labs/squares_controller:latest
+```
+
+Open `http://UNRAID_IP:4312`. The web UI has no authentication, so keep port
+4312 on a trusted, firewalled LAN and do not expose it to the internet.
+
+### Networking and Twinkly traffic
+
+The application does not perform multicast or broadcast discovery. `TWINKLY_IP`
+must contain the Squares controller's private or link-local IPv4 address. The
+server contacts that address over HTTP and sends the realtime RGB protocol as
+unicast UDP packets to destination port 7777. Port 7777 belongs to the Twinkly
+device; it is outbound container traffic and must not be published on the
+Squares Controller container.
+
+If custom Unraid firewall, VLAN, or Docker routing rules prevent the container
+from reaching the Twinkly device, host networking is a simple fallback. Do not
+combine `--network host` with `-p`:
+
+```bash
+docker run -d \
+  --name twinkly-squares \
+  --network host \
+  --restart unless-stopped \
+  -e TWINKLY_IP=192.168.1.100 \
+  -v /mnt/user/appdata/twinkly-squares:/data \
+  ghcr.io/mukw-labs/squares_controller:latest
+```
+
+No UDP proxy, multicast relay, extra capability, or privileged mode is needed.
+
+### Container configuration and storage
+
+The image listens on TCP port 4312 and sets the required trusted-LAN opt-in.
+Its relevant defaults are:
+
+| Variable | Container default | Purpose |
+| --- | --- | --- |
+| `TWINKLY_IP` | unset | Required private/link-local IPv4 address of the Twinkly controller |
+| `HOST` | `0.0.0.0` | Web server bind address |
+| `PORT` | `4312` | Web server TCP port |
+| `ALLOW_UNAUTHENTICATED_LAN` | `1` | Required acknowledgement for a non-loopback bind |
+| `SQUARES_CONFIG` | `/data/config.json` | Optional JSON configuration file |
+| `SQUARES_LIBRARY` | `/data/library.json` | Scenes, playlists, and palettes |
+| `SQUARES_AUTOMATIONS` | `/data/automations.json` | Automation definitions |
+| `SQUARES_RUNTIME_POLICY` | `/data/runtime.json` | Startup and frame-loss policy |
+| `SQUARES_MOVIE_ARCHIVE` | `/data/movies` | Archived movie frames and metadata |
+
+Map `/data` to persistent Unraid appdata as shown above. This is the only
+required volume if `TWINKLY_IP` is set. As an alternative to that environment
+variable, create `/mnt/user/appdata/twinkly-squares/config.json` containing:
+
+```json
+{
+  "deviceIp": "192.168.1.100"
+}
+```
+
+The process runs as non-root UID/GID `10001`. Ensure an existing appdata
+directory is writable by that ID before starting the container. Docker-created
+named volumes are initialized appropriately automatically.
+
+Inspect startup and runtime output with:
+
+```bash
+docker logs --follow twinkly-squares
+```
+
+To update, pull the new image, remove the old container, and repeat the same
+`docker run` command. Data remains in the mapped `/data` directory:
+
+```bash
+docker pull ghcr.io/mukw-labs/squares_controller:latest
+docker stop twinkly-squares
+docker rm twinkly-squares
+```
+
+### Sync this fork with upstream
+
+This checkout keeps the fork as `origin` and the original project as
+`upstream`. To incorporate upstream changes without rewriting its history:
+
+```bash
+git fetch upstream
+git checkout main
+git merge upstream/main
+git push origin main
+```
+
 ## Local integrations
 
 The versioned local API is documented in
@@ -125,6 +235,7 @@ Environment variables override the defaults:
 | `SQUARES_LIBRARY` | Alternate scene/playlist file | `./.squares/library.json` |
 | `SQUARES_AUTOMATIONS` | Alternate automation file | `./.squares/automations.json` |
 | `SQUARES_RUNTIME_POLICY` | Alternate startup/frame-loss policy file | `./.squares/runtime.json` |
+| `SQUARES_MOVIE_ARCHIVE` | Alternate movie archive directory | `./.squares/movies` |
 | `ALLOW_UNAUTHENTICATED_LAN` | Explicitly allow a non-loopback bind | unset |
 
 ## Start automatically on macOS
